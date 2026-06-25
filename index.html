@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>豪華版粒子貪食蛇</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #2c3e50;
+            color: white;
+            font-family: Arial, sans-serif;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        canvas {
+            border: 5px solid #ecf0f1;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
+            background-color: #000;
+        }
+        .score-board {
+            font-size: 24px;
+            margin-bottom: 15px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="score-board">
+        分數: <span id="scoreVal">0</span> | 最高分: <span id="highScore">0</span>
+    </div>
+    <canvas id="snakeGame" width="400" height="400"></canvas>
+
+    <script>
+        const canvas = document.getElementById("snakeGame");
+        const ctx = canvas.getContext("2d");
+        const scoreElement = document.getElementById("scoreVal");
+        const highScoreElement = document.getElementById("highScore");
+
+        const box = 20;
+        let score = 0;
+        let currentSpeed = 255;
+        let gameLoop;
+        let highScore = localStorage.getItem("snakeHighScore") || 0;
+        highScoreElement.innerHTML = highScore;
+
+        // --- 1. 粒子系統 ---
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.size = Math.random() * 4 + 1;
+                this.speedX = (Math.random() - 0.7) * 6; // 增加噴發速度
+                this.speedY = (Math.random() - 0.7) * 6;
+                this.color = color;
+                this.alpha = 1;
+            }
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                this.alpha -= 0.02;
+            }
+            draw(ctx) {
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+                ctx.restore();
+            }
+        }
+
+        let particles = [];
+        function createExplosion(x, y, color) {
+            for (let i = 0; i < 15; i++) {
+                particles.push(new Particle(x, y, color));
+            }
+        }
+
+        function handleParticles(ctx) {
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].update();
+                particles[i].draw(ctx);
+                if (particles[i].alpha <= 0) {
+                    particles.splice(i, 1);
+                    i--;
+                }
+            }
+        }
+
+        // --- 2. 遊戲主邏輯 ---
+        let snake = [{ x: 9 * box, y: 10 * box }];
+        let food = spawnFood();
+        let d, nextD;
+
+        document.addEventListener("keydown", event => {
+            let key = event.keyCode;
+            if(key == 37 && d != "RIGHT") nextD = "LEFT";
+            else if(key == 38 && d != "DOWN") nextD = "UP";
+            else if(key == 39 && d != "LEFT") nextD = "RIGHT";
+            else if(key == 40 && d != "UP") nextD = "DOWN";
+        });
+
+        function spawnFood() {
+            return {
+                x: Math.floor(Math.random() * 19 + 1) * box,
+                y: Math.floor(Math.random() * 19 + 1) * box
+            };
+        }
+
+        function collision(head, array) {
+            for(let i = 0; i < array.length; i++) {
+                if(head.x == array[i].x && head.y == array[i].y) return true;
+            }
+            return false;
+        }
+
+        function draw() {
+            d = nextD;
+            ctx.fillStyle = "pink";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 畫蛇
+            for(let i = 0; i < snake.length; i++) {
+                ctx.fillStyle = (i == 0) ? "red" : "blue";
+                ctx.fillRect(snake[i].x, snake[i].y, box, box);
+                ctx.strokeStyle = "black";
+                ctx.strokeRect(snake[i].x, snake[i].y, box, box);
+            }
+
+            // 畫食物
+            ctx.fillStyle = "black";
+            ctx.fillRect(food.x, food.y, box, box);
+
+            // 更新與畫粒子
+            handleParticles(ctx);
+
+            let snakeX = snake[0].x;
+            let snakeY = snake[0].y;
+
+            if( d == "LEFT") snakeX -= box;
+            if( d == "UP") snakeY -= box;
+            if( d == "RIGHT") snakeX += box;
+            if( d == "DOWN") snakeY += box;
+
+            if(snakeX == food.x && snakeY == food.y) {
+                score++;
+                scoreElement.innerHTML = score;
+                // 吃到食物：觸發紅色爆炸！
+                createExplosion(food.x + box/2, food.y + box/2, "black");
+                food = spawnFood();
+                if (score % 5 === 0 && currentSpeed > 50) resetGameLoop(currentSpeed - 10);
+            } else {
+                snake.pop();
+            }
+
+            let newHead = { x: snakeX, y: snakeY };
+
+            if(snakeX < 0 || snakeX >= canvas.width || snakeY < 0 || snakeY >= canvas.height || collision(newHead, snake)) {
+                // 撞車：觸發綠色爆炸！
+                createExplosion(snakeX, snakeY, "yellow");
+                if (score > highScore) localStorage.setItem("snakeHighScore", score);
+                
+                // 延遲一點點再結束，讓玩家看到爆炸效果
+                setTimeout(() => {
+                    alert("遊戲結束！ 分數: " + score);
+                    location.reload();
+                }, 500);
+                clearInterval(gameLoop);
+            }
+
+            snake.unshift(newHead);
+        }
+
+        function resetGameLoop(speed) {
+            currentSpeed = speed;
+            clearInterval(gameLoop);
+            gameLoop = setInterval(draw, currentSpeed);
+        }
+
+        gameLoop = setInterval(draw, currentSpeed);
+    </script>
+</body>
+</html>
